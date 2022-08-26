@@ -27,13 +27,118 @@
  */
 
 #include <aes.h>
+#include <logging.h>
 #include <pgmoneta.h>
 #include <security.h>
+#include <utils.h>
+/* System */
+#include <dirent.h>
 
 static int derive_key_iv(char* password, unsigned char* key, unsigned char* iv, int mode);
 static int aes_encrypt(char* plaintext, unsigned char* key, unsigned char* iv, char** ciphertext, int* ciphertext_length, int mode);
 static int aes_decrypt(char* ciphertext, int ciphertext_length, unsigned char* key, unsigned char* iv, char** plaintext, int mode);
-static const EVP_CIPHER*(*get_cipher(int mode))(void);
+static const EVP_CIPHER* (*get_cipher(int mode))(void);
+
+int
+pgmoneta_encrypt_wal(char* d)
+{
+   pgmoneta_log_info("encrypt_wal:d=%s", d);
+   char* from = NULL;
+   char* to = NULL;
+   DIR* dir;
+   struct dirent* entry;
+   struct configuration* config;
+
+   config = (struct configuration*)shmem;
+
+   if (!(dir = opendir(d)))
+   {
+      return 1;
+   }
+   char* plain = malloc(1024 * 1024 * 16); // default wal size
+   char* master_key = NULL;
+   char* encrypted = NULL;
+   int encrypted_length = 0;
+   char* encoded = NULL;
+   if (pgmoneta_get_master_key(&master_key))
+   {
+      pgmoneta_log_fatal("Invalid master key\n");
+      exit(1);
+   }
+   while ((entry = readdir(dir)) != NULL)
+   {
+      if (entry->d_type == DT_REG)
+      {
+         if (pgmoneta_ends_with(entry->d_name, ".aes")
+             || pgmoneta_ends_with(entry->d_name, ".partial")
+             || pgmoneta_ends_with(entry->d_name, ".history")
+             )
+         {
+            continue;
+         }
+
+         from = NULL;
+
+         from = pgmoneta_append(from, d);
+         from = pgmoneta_append(from, "/");
+         from = pgmoneta_append(from, entry->d_name);
+
+         to = NULL;
+
+         to = pgmoneta_append(to, d);
+         to = pgmoneta_append(to, "/");
+         to = pgmoneta_append(to, "encrypted/");
+         to = pgmoneta_append(to, entry->d_name);
+         to = pgmoneta_append(to, ".aes");
+
+         if (pgmoneta_exists(from))
+         {
+            pgmoneta_log_debug("encrypting from %s to %s", from, to);
+            FILE* in = fopen(from, "rb");
+            if (in == NULL)
+            {
+               pgmoneta_log_error("fopen: Could not open %s/%s", d, entry->d_name);
+               break;
+            }
+            fseek(in, 0L, SEEK_END);
+            int fsize = ftell(in);
+            plain = realloc(plain, fsize);
+            fread(plain, sizeof(char), fsize, in);
+            if (pgmoneta_encrypt(plain, master_key, &encrypted, &encrypted_length, config->encryption))
+            {
+               pgmoneta_log_error("pgmoneta_encrypt_wal: Could not encrypt %s/%s", d, entry->d_name);
+               break;
+            }
+            if (pgmoneta_base64_encode(encrypted, encrypted_length, &encoded))
+            {
+               pgmoneta_log_error("pgmoneta_encrypt_wal: Could not encode the encrypted bytes from %s/%s", d, entry->d_name);
+               break;
+            }
+            FILE* out = fopen(to, "w");
+            if (fputs(encoded, out) == EOF)
+            {
+               pgmoneta_log_error("pgmoneta_encrypt_wal: Could not write to %s", to);
+               fclose(out);
+               break;
+            }
+            fclose(out);
+            pgmoneta_delete_file(from);
+            pgmoneta_permission(to, 6, 0, 0);
+         }
+
+         free(from);
+         free(to);
+      }
+   }
+
+   closedir(dir);
+   free(plain);
+   free(encrypted);
+   free(encoded);
+   free(master_key);
+   free(encrypted_length);
+   return 0;
+}
 
 int
 pgmoneta_encrypt(char* plaintext, char* password, char** ciphertext, int* ciphertext_length, int mode)
@@ -205,13 +310,30 @@ error:
    return 1;
 }
 
-
-static const EVP_CIPHER*(*get_cipher(int mode))(void)
+static const EVP_CIPHER* (*get_cipher(int mode))(void)
 {
-   if(mode = AES_256_CBC) return &EVP_aes_256_cbc;
-   if(mode = AES_192_CBC) return &EVP_aes_192_cbc;
-   if(mode = AES_128_CBC) return &EVP_aes_128_cbc;
-   if(mode = AES_256_CTR) return &EVP_aes_256_ctr;
-   if(mode = AES_192_CTR) return &EVP_aes_192_ctr;
-   if(mode = AES_128_CTR) return &EVP_aes_128_ctr;
+   if (mode = AES_256_CBC)
+   {
+      return &EVP_aes_256_cbc;
+   }
+   if (mode = AES_192_CBC)
+   {
+      return &EVP_aes_192_cbc;
+   }
+   if (mode = AES_128_CBC)
+   {
+      return &EVP_aes_128_cbc;
+   }
+   if (mode = AES_256_CTR)
+   {
+      return &EVP_aes_256_ctr;
+   }
+   if (mode = AES_192_CTR)
+   {
+      return &EVP_aes_192_ctr;
+   }
+   if (mode = AES_128_CTR)
+   {
+      return &EVP_aes_128_ctr;
+   }
 }

@@ -49,3 +49,11 @@ pgmoneta_encrypt(char* plaintext, char* password, char** ciphertext, int* cipher
  */
 int
 pgmoneta_decrypt(char* ciphertext, int ciphertext_length, char* password, char** plaintext, int mode);
+
+/**
+ * Encrypt the files under the directory in place, also remvoe unencrypted files.
+ * @param d The wal directory
+ * @return 0 upon success, otherwise 1
+ */
+int
+pgmoneta_encrypt_wal(char* d);

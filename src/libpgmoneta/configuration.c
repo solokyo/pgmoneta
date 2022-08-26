@@ -86,7 +86,7 @@ pgmoneta_init_configuration(void* shm)
    config->compression_level = 3;
 
    config->encryption = ENCRYPTION_NONE;
-   
+
    config->storage_engine = STORAGE_ENGINE_LOCAL;
 
    config->retention = 7;
@@ -1020,7 +1020,7 @@ pgmoneta_read_users_configuration(void* shm, char* filename)
                goto error;
             }
 
-            if (pgmoneta_decrypt(decoded, decoded_length, master_key, &password, AES_256_CBC))
+            if (pgmoneta_decrypt(decoded, decoded_length, master_key, &password, ENCRYPTION_AES_256_CBC))
             {
                goto error;
             }
@@ -1192,7 +1192,7 @@ pgmoneta_read_admins_configuration(void* shm, char* filename)
                goto error;
             }
 
-            if (pgmoneta_decrypt(decoded, decoded_length, master_key, &password, AES_256_CBC))
+            if (pgmoneta_decrypt(decoded, decoded_length, master_key, &password, ENCRYPTION_AES_256_CBC))
             {
                goto error;
             }
@@ -1620,31 +1620,31 @@ as_encryption_mode(char* str)
       return ENCRYPTION_NONE;
    }
 
-   if (!strcasecmp(str, "aes") || !strcasecmp(str, "aes-256")|| !strcasecmp(str, "aes-256-cbc"))
+   if (!strcasecmp(str, "aes") || !strcasecmp(str, "aes-256") || !strcasecmp(str, "aes-256-cbc"))
    {
-      return AES_256_CBC;
+      return ENCRYPTION_AES_256_CBC;
    }
 
    if (!strcasecmp(str, "aes-192") || !strcasecmp(str, "aes-192-cbc"))
    {
-      return AES_192_CBC;
+      return ENCRYPTION_AES_192_CBC;
    }
 
    if (!strcasecmp(str, "aes-128") || !strcasecmp(str, "aes-128-cbc"))
    {
-      return AES_128_CBC;
+      return ENCRYPTION_AES_128_CBC;
    }
    if (!strcasecmp(str, "aes-256-ctr"))
    {
-      return AES_256_CTR;
+      return ENCRYPTION_AES_256_CTR;
    }
    if (!strcasecmp(str, "aes-192-ctr"))
    {
-      return AES_192_CTR;
+      return ENCRYPTION_AES_192_CTR;
    }
    if (!strcasecmp(str, "aes-128-ctr"))
    {
-      return AES_128_CTR;
+      return ENCRYPTION_AES_128_CTR;
    }
    return ENCRYPTION_NONE;
 }
