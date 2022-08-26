@@ -572,7 +572,7 @@ password:
       }
    }
 
-   pgmoneta_encrypt(password, master_key, &encrypted, &encrypted_length);
+   pgmoneta_encrypt(password, master_key, &encrypted, &encrypted_length, AES_256_CBC);
    pgmoneta_base64_encode(encrypted, encrypted_length, &encoded);
 
    snprintf(line, sizeof(line), "%s:%s\n", username, encoded);
@@ -740,7 +740,7 @@ password:
             }
          }
 
-         pgmoneta_encrypt(password, master_key, &encrypted, &encrypted_length);
+         pgmoneta_encrypt(password, master_key, &encrypted, &encrypted_length, AES_256_CBC);
          pgmoneta_base64_encode(encrypted, encrypted_length, &encoded);
 
          memset(&line, 0, sizeof(line));

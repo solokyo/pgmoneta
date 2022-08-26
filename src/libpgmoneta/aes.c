@@ -27,14 +27,16 @@
  */
 
 #include <aes.h>
+#include <pgmoneta.h>
+#include <security.h>
 
-static int derive_key_iv(char* password, unsigned char* key, unsigned char* iv);
-static int aes_encrypt(char* plaintext, unsigned char* key, unsigned char* iv, char** ciphertext, int* ciphertext_length);
-static int aes_decrypt(char* ciphertext, int ciphertext_length, unsigned char* key, unsigned char* iv, char** plaintext);
+static int derive_key_iv(char* password, unsigned char* key, unsigned char* iv, int mode);
+static int aes_encrypt(char* plaintext, unsigned char* key, unsigned char* iv, char** ciphertext, int* ciphertext_length, int mode);
+static int aes_decrypt(char* ciphertext, int ciphertext_length, unsigned char* key, unsigned char* iv, char** plaintext, int mode);
+static const EVP_CIPHER*(*get_cipher(int mode))(void);
 
-// [public]
 int
-pgmoneta_encrypt(char* plaintext, char* password, char** ciphertext, int* ciphertext_length)
+pgmoneta_encrypt(char* plaintext, char* password, char** ciphertext, int* ciphertext_length, int mode)
 {
    unsigned char key[EVP_MAX_KEY_LENGTH];
    unsigned char iv[EVP_MAX_IV_LENGTH];
@@ -42,17 +44,16 @@ pgmoneta_encrypt(char* plaintext, char* password, char** ciphertext, int* cipher
    memset(&key, 0, sizeof(key));
    memset(&iv, 0, sizeof(iv));
 
-   if (derive_key_iv(password, key, iv) != 0)
+   if (derive_key_iv(password, key, iv, mode) != 0)
    {
       return 1;
    }
 
-   return aes_encrypt(plaintext, key, iv, ciphertext, ciphertext_length);
+   return aes_encrypt(plaintext, key, iv, ciphertext, ciphertext_length, mode);
 }
 
-// [public]
 int
-pgmoneta_decrypt(char* ciphertext, int ciphertext_length, char* password, char** plaintext)
+pgmoneta_decrypt(char* ciphertext, int ciphertext_length, char* password, char** plaintext, int mode)
 {
    unsigned char key[EVP_MAX_KEY_LENGTH];
    unsigned char iv[EVP_MAX_IV_LENGTH];
@@ -60,24 +61,24 @@ pgmoneta_decrypt(char* ciphertext, int ciphertext_length, char* password, char**
    memset(&key, 0, sizeof(key));
    memset(&iv, 0, sizeof(iv));
 
-   if (derive_key_iv(password, key, iv) != 0)
+   if (derive_key_iv(password, key, iv, mode) != 0)
    {
       return 1;
    }
 
-   return aes_decrypt(ciphertext, ciphertext_length, key, iv, plaintext);
+   return aes_decrypt(ciphertext, ciphertext_length, key, iv, plaintext, mode);
 }
 
 // [private]
 static int
-derive_key_iv(char* password, unsigned char* key, unsigned char* iv)
+derive_key_iv(char* password, unsigned char* key, unsigned char* iv, int mode)
 {
 
 #if (OPENSSL_VERSION_NUMBER < 0x10100000L)
    OpenSSL_add_all_algorithms();
 #endif
 
-   if (!EVP_BytesToKey(EVP_aes_256_cbc(), EVP_sha1(), NULL,
+   if (!EVP_BytesToKey(get_cipher(mode)(), EVP_sha1(), NULL,
                        (unsigned char*) password, strlen(password), 1,
                        key, iv))
    {
@@ -89,25 +90,25 @@ derive_key_iv(char* password, unsigned char* key, unsigned char* iv)
 
 // [private]
 static int
-aes_encrypt(char* plaintext, unsigned char* key, unsigned char* iv, char** ciphertext, int* ciphertext_length)
+aes_encrypt(char* plaintext, unsigned char* key, unsigned char* iv, char** ciphertext, int* ciphertext_length, int mode)
 {
    EVP_CIPHER_CTX* ctx = NULL;
    int length;
    size_t size;
    unsigned char* ct = NULL;
    int ct_length;
-
+   EVP_CIPHER* (*cipher_fp)(void) = get_cipher(mode);
    if (!(ctx = EVP_CIPHER_CTX_new()))
    {
       goto error;
    }
 
-   if (EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv) != 1)
+   if (EVP_EncryptInit_ex(ctx, cipher_fp(), NULL, key, iv) != 1)
    {
       goto error;
    }
 
-   size = strlen(plaintext) + EVP_CIPHER_block_size(EVP_aes_256_cbc());
+   size = strlen(plaintext) + EVP_CIPHER_block_size(cipher_fp());
    ct = malloc(size);
    memset(ct, 0, size);
 
@@ -147,25 +148,26 @@ error:
 
 // [private]
 static int
-aes_decrypt(char* ciphertext, int ciphertext_length, unsigned char* key, unsigned char* iv, char** plaintext)
+aes_decrypt(char* ciphertext, int ciphertext_length, unsigned char* key, unsigned char* iv, char** plaintext, int mode)
 {
    EVP_CIPHER_CTX* ctx = NULL;
    int plaintext_length;
    int length;
    size_t size;
    char* pt = NULL;
+   EVP_CIPHER* (*cipher_fp)(void) = get_cipher(mode);
 
    if (!(ctx = EVP_CIPHER_CTX_new()))
    {
       goto error;
    }
 
-   if (EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv) != 1)
+   if (EVP_DecryptInit_ex(ctx, cipher_fp(), NULL, key, iv) != 1)
    {
       goto error;
    }
 
-   size = ciphertext_length + EVP_CIPHER_block_size(EVP_aes_256_cbc());
+   size = ciphertext_length + EVP_CIPHER_block_size(cipher_fp());
    pt = malloc(size);
    memset(pt, 0, size);
 
@@ -201,4 +203,15 @@ error:
    free(pt);
 
    return 1;
+}
+
+
+static const EVP_CIPHER*(*get_cipher(int mode))(void)
+{
+   if(mode = AES_256_CBC) return &EVP_aes_256_cbc;
+   if(mode = AES_192_CBC) return &EVP_aes_192_cbc;
+   if(mode = AES_128_CBC) return &EVP_aes_128_cbc;
+   if(mode = AES_256_CTR) return &EVP_aes_256_ctr;
+   if(mode = AES_192_CTR) return &EVP_aes_192_ctr;
+   if(mode = AES_128_CTR) return &EVP_aes_128_ctr;
 }

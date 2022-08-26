@@ -37,7 +37,7 @@
  * @return 0 upon success, otherwise 1
  */
 int
-pgmoneta_encrypt(char* plaintext, char* password, char** ciphertext, int* ciphertext_length);
+pgmoneta_encrypt(char* plaintext, char* password, char** ciphertext, int* ciphertext_length, int mode);
 
 /**
  * Decrypt a string
@@ -48,4 +48,4 @@ pgmoneta_encrypt(char* plaintext, char* password, char** ciphertext, int* cipher
  * @return 0 upon success, otherwise 1
  */
 int
-pgmoneta_decrypt(char* ciphertext, int ciphertext_length, char* password, char** plaintext);
+pgmoneta_decrypt(char* ciphertext, int ciphertext_length, char* password, char** plaintext, int mode);
