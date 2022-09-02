@@ -28,7 +28,6 @@
 
 /* pgmoneta */
 #include <aes.h>
-#include <info.h>
 #include <link.h>
 #include <logging.h>
 #include <node.h>
@@ -37,8 +36,6 @@
 #include <workflow.h>
 
 /* system */
-// #include <stdbool.h>
-// #include <stdatomic.h>
 #include <stdlib.h>
 
 static int encryption_setup(int, char*, struct node*, struct node**);
