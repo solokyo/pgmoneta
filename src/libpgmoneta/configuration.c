@@ -36,6 +36,7 @@
 #include <aes.h>
 
 /* system */
+#include <err.h>
 #include <errno.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -163,7 +164,7 @@ pgmoneta_read_configuration(void* shm, char* filename)
                   }
                   else if (idx_server > NUMBER_OF_SERVERS)
                   {
-                     printf("Maximum number of servers exceeded\n");
+                     warnx("Maximum number of servers exceeded");
                   }
 
                   memset(&srv, 0, sizeof(struct server));
@@ -797,7 +798,7 @@ pgmoneta_read_configuration(void* shm, char* filename)
 
                if (unknown)
                {
-                  printf("Unknown: Section=%s, Key=%s, Value=%s\n", strlen(section) > 0 ? section : "<unknown>", key, value);
+                  warnx("Unknown: Section=%s, Key=%s, Value=%s", strlen(section) > 0 ? section : "<unknown>", key, value);
                }
 
                free(key);
@@ -1033,8 +1034,8 @@ pgmoneta_read_users_configuration(void* shm, char* filename)
             }
             else
             {
-               printf("pgmoneta: Invalid USER entry\n");
-               printf("%s\n", line);
+               warnx("pgmoneta: Invalid USER entry");
+               warnx("%s", line);
             }
 
             free(password);
@@ -1205,8 +1206,8 @@ pgmoneta_read_admins_configuration(void* shm, char* filename)
             }
             else
             {
-               printf("pgmoneta: Invalid ADMIN entry\n");
-               printf("%s\n", line);
+               warnx("pgmoneta: Invalid ADMIN entry");
+               warnx("%s", line);
             }
 
             free(password);
