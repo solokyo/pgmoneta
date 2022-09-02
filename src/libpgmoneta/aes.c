@@ -40,6 +40,98 @@ static int aes_decrypt(char* ciphertext, int ciphertext_length, unsigned char* k
 static const EVP_CIPHER* (*get_cipher(int mode))(void);
 
 int
+pgmoneta_encrypt_data(char* d)
+{
+   char* from = NULL;
+   char* to = NULL;
+   DIR* dir;
+   struct dirent* entry;
+   char* plain = NULL;
+   char* master_key = NULL;
+   char* encrypted = NULL;
+   int encrypted_length = 0;
+   char* encoded = NULL;
+   struct configuration* config;
+   config = (struct configuration*)shmem;
+
+   if (!(dir = opendir(d)))
+   {
+      return;
+   }
+
+   while ((entry = readdir(dir)) != NULL)
+   {
+      if (entry->d_type == DT_DIR)
+      {
+         char path[1024];
+
+         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+         {
+            continue;
+         }
+
+         snprintf(path, sizeof(path), "%s/%s", d, entry->d_name);
+
+         pgmoneta_encrypt_data(path);
+      }
+      else
+      {
+         if (!pgmoneta_ends_with(entry->d_name, ".aes") && 
+             !pgmoneta_ends_with(entry->d_name, ".partial") &&
+             !pgmoneta_ends_with(entry->d_name, ".history"))
+         {
+            from = NULL;
+
+            from = pgmoneta_append(from, d);
+            from = pgmoneta_append(from, "/");
+            from = pgmoneta_append(from, entry->d_name);
+
+            to = NULL;
+
+            to = pgmoneta_append(to, d);
+            to = pgmoneta_append(to, "/");
+            to = pgmoneta_append(to, entry->d_name);
+            to = pgmoneta_append(to, ".aes");
+
+            if (pgmoneta_exists(from))
+            {
+               pgmoneta_log_debug("encrypting from %s to %s", from, to);
+               FILE* in = fopen(from, "rb");
+               if (in == NULL)
+               {
+                  pgmoneta_log_error("fopen: Could not open %s/%s", d, entry->d_name);
+                  break;
+               }
+               fseek(in, 0L, SEEK_END);
+               int fsize = ftell(in);
+               plain = realloc(plain, fsize);
+               fread(plain, sizeof(char), fsize, in);
+               if (pgmoneta_encrypt(plain, master_key, &encrypted, &encrypted_length, config->encryption))
+               {
+                  pgmoneta_log_error("pgmoneta_encrypt_wal: Could not encrypt %s/%s", d, entry->d_name);
+                  break;
+               }
+               FILE* out = fopen(to, "w");
+               if (fputs(encoded, out) == EOF)
+               {
+                  pgmoneta_log_error("pgmoneta_encrypt_wal: Could not write to %s", to);
+                  fclose(out);
+                  break;
+               }
+               fclose(out);
+               pgmoneta_delete_file(from);
+            }
+
+            free(from);
+            free(to);
+         }
+      }
+   }
+
+   closedir(dir);
+}
+
+int
 pgmoneta_encrypt_wal(char* d)
 {
    pgmoneta_log_info("encrypt_wal:d=%s", d);
@@ -47,19 +139,19 @@ pgmoneta_encrypt_wal(char* d)
    char* to = NULL;
    DIR* dir;
    struct dirent* entry;
+   char* plain = NULL;
+   char* master_key = NULL;
+   char* encrypted = NULL;
+   int encrypted_length = 0;
+   char* encoded = NULL;
    struct configuration* config;
-
    config = (struct configuration*)shmem;
 
    if (!(dir = opendir(d)))
    {
       return 1;
    }
-   char* plain = malloc(1024 * 1024 * 16); // default wal size
-   char* master_key = NULL;
-   char* encrypted = NULL;
-   int encrypted_length = 0;
-   char* encoded = NULL;
+
    if (pgmoneta_get_master_key(&master_key))
    {
       pgmoneta_log_fatal("Invalid master key\n");
@@ -87,7 +179,6 @@ pgmoneta_encrypt_wal(char* d)
 
          to = pgmoneta_append(to, d);
          to = pgmoneta_append(to, "/");
-         to = pgmoneta_append(to, "encrypted/");
          to = pgmoneta_append(to, entry->d_name);
          to = pgmoneta_append(to, ".aes");
 
@@ -137,6 +228,167 @@ pgmoneta_encrypt_wal(char* d)
    free(encoded);
    free(master_key);
    free(encrypted_length);
+   return 0;
+}
+
+int
+pgmoneta_encrypt_file(char* from, char* to)
+{
+   char* plain = NULL;
+   char* master_key = NULL;
+   char* encrypted = NULL;
+   int encrypted_length = 0;
+   char* encoded = NULL;
+   struct configuration* config;
+   config = (struct configuration*)shmem;
+
+   pgmoneta_log_debug("decrypting from %s to %s", from, to);
+   if (!pgmoneta_exists(from))
+   {
+      pgmoneta_log_error("pgmoneta_encrypt_file: file not exist: %s", from);
+      return 1;
+   }
+
+   pgmoneta_log_debug("encrypting from %s to %s", from, to);
+   FILE* in = fopen(from, "rb");
+   if (in == NULL)
+   {
+      pgmoneta_log_error("fopen: Could not open %s", from);
+      return 1;
+   }
+   fseek(in, 0L, SEEK_END);
+   int fsize = ftell(in);
+   plain = realloc(plain, fsize);
+   fread(plain, sizeof(char), fsize, in);
+   if (pgmoneta_encrypt(plain, master_key, &encrypted, &encrypted_length, config->encryption))
+   {
+      pgmoneta_log_error("pgmoneta_encrypt_wal: Could not encrypt %s", from);
+      return 1;
+   }
+   if (pgmoneta_base64_encode(encrypted, encrypted_length, &encoded))
+   {
+      pgmoneta_log_error("pgmoneta_encrypt_wal: Could not encode the encrypted bytes from %s", from);
+      return 1;
+   }
+   FILE* out = fopen(to, "w");
+   if (fputs(encoded, out) == EOF)
+   {
+      pgmoneta_log_error("pgmoneta_encrypt_wal: Could not write to %s", to);
+      fclose(out);
+      return 1;
+   }
+   fclose(out);
+   pgmoneta_delete_file(from);      
+   free(plain);
+   free(encrypted);
+   free(encoded);
+   free(master_key);
+   free(encrypted_length);
+   return 0;
+}
+
+int
+pgmoneta_decrypt_data(char* d)
+{
+   pgmoneta_log_info("pgmoneta_decrypt_data:d=%s", d);
+   char* from = NULL;
+   char* to = NULL;
+   char* name = NULL;
+   DIR* dir;
+   struct dirent* entry;
+   char* cipher = NULL;
+   int cipher_length = 0;
+   char* master_key = NULL;
+   char* plain = NULL;
+   char* encoded = NULL;
+   struct configuration* config;
+   config = (struct configuration*)shmem;
+
+   if (!(dir = opendir(d)))
+   {
+      pgmoneta_log_error("pgmoneta_decrypt_data: Could not open directory %s", d);
+      return 1;
+   }
+
+   while ((entry = readdir(dir)) != NULL)
+   {
+      if (entry->d_type == DT_DIR)
+      {
+         char path[1024];
+
+         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+         {
+            continue;
+         }
+
+         snprintf(path, sizeof(path), "%s/%s", d, entry->d_name);
+
+         pgmoneta_decrypt_data(path);
+      }
+      else
+      {
+         if (pgmoneta_ends_with(entry->d_name, ".aes"))
+         {
+            from = NULL;
+
+            from = pgmoneta_append(from, d);
+            from = pgmoneta_append(from, "/");
+            from = pgmoneta_append(from, entry->d_name);
+
+            name = malloc(strlen(entry->d_name) - 3);
+            memset(name, 0, strlen(entry->d_name) - 3);
+            memcpy(name, entry->d_name, strlen(entry->d_name) - 4);
+
+            to = NULL;
+
+            to = pgmoneta_append(to, d);
+            to = pgmoneta_append(to, "/");
+            to = pgmoneta_append(to, name);
+
+            FILE* in = fopen(from, "rb");
+            if (in == NULL)
+            {
+               pgmoneta_log_error("fopen: Could not open %s/%s", d, entry->d_name);
+               break;
+            }
+            fseek(in, 0L, SEEK_END);
+            int fsize = ftell(in);
+            encoded = realloc(encoded, fsize);
+            fread(encoded, sizeof(char), fsize, in);
+            if (pgmoneta_base64_decode(encoded, fsize, &cipher, &cipher_length))
+            {
+               pgmoneta_log_error("pgmoneta_decrypt_wal: Could not decode from %s/%s", d, entry->d_name);
+               break;
+            }
+
+            if (pgmoneta_decrypt(cipher, cipher_length, master_key, &plain, config->encryption))
+            {
+               pgmoneta_log_error("pgmoneta_decrypt_data: Could not decrypt %s/%s", d, entry->d_name);
+               break;
+            }
+
+            FILE* out = fopen(to, "w");
+            if (fputs(plain, out) == EOF)
+            {
+               pgmoneta_log_error("pgmoneta_encrypt_wal: Could not write to %s", to);
+               fclose(out);
+               break;
+            }
+            fclose(out);
+            pgmoneta_delete_file(from);
+
+            free(name);
+            free(from);
+            free(to);
+         }
+      }
+   }
+
+   closedir(dir);
+   free(cipher);
+   free(plain);
+   free(encoded);
+   free(master_key);
    return 0;
 }
 
@@ -312,27 +564,27 @@ error:
 
 static const EVP_CIPHER* (*get_cipher(int mode))(void)
 {
-   if (mode = AES_256_CBC)
+   if (mode = ENCRYPTION_AES_256_CBC)
    {
       return &EVP_aes_256_cbc;
    }
-   if (mode = AES_192_CBC)
+   if (mode = ENCRYPTION_AES_192_CBC)
    {
       return &EVP_aes_192_cbc;
    }
-   if (mode = AES_128_CBC)
+   if (mode = ENCRYPTION_AES_128_CBC)
    {
       return &EVP_aes_128_cbc;
    }
-   if (mode = AES_256_CTR)
+   if (mode = ENCRYPTION_AES_256_CTR)
    {
       return &EVP_aes_256_ctr;
    }
-   if (mode = AES_192_CTR)
+   if (mode = ENCRYPTION_AES_192_CTR)
    {
       return &EVP_aes_192_ctr;
    }
-   if (mode = AES_128_CTR)
+   if (mode = ENCRYPTION_AES_128_CTR)
    {
       return &EVP_aes_128_ctr;
    }
