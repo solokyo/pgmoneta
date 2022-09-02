@@ -28,6 +28,7 @@
 
 /* pgmoneta */
 #include <pgmoneta.h>
+#include <aes.h>
 #include <archive.h>
 #include <backup.h>
 #include <configuration.h>
@@ -1389,8 +1390,10 @@ static void
 wal_compress_cb(struct ev_loop* loop, ev_periodic* w, int revents)
 {
    struct configuration* config;
-
    config = (struct configuration*)shmem;
+   char* master_key = NULL;
+   char* encrypted = NULL;
+   int encrypted_length = 0;
 
    if (EV_ERROR & revents)
    {
@@ -1422,6 +1425,11 @@ wal_compress_cb(struct ev_loop* loop, ev_periodic* w, int revents)
          else if (config->compression_type == COMPRESSION_LZ4)
          {
             pgmoneta_lz4c_wal(d);
+         }
+
+         if (config->encryption != 0)
+         {
+            pgmoneta_encrypt_wal(d);
          }
 
          free(d);
