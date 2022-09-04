@@ -1392,9 +1392,6 @@ wal_compress_cb(struct ev_loop* loop, ev_periodic* w, int revents)
 {
    struct configuration* config;
    config = (struct configuration*)shmem;
-   char* master_key = NULL;
-   char* encrypted = NULL;
-   int encrypted_length = 0;
 
    if (EV_ERROR & revents)
    {

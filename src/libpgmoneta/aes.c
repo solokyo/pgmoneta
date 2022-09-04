@@ -129,6 +129,7 @@ pgmoneta_encrypt_data(char* d)
    }
 
    closedir(dir);
+   return 0;
 }
 
 int
@@ -227,7 +228,6 @@ pgmoneta_encrypt_wal(char* d)
    free(encrypted);
    free(encoded);
    free(master_key);
-   free(encrypted_length);
    return 0;
 }
 
@@ -283,7 +283,6 @@ pgmoneta_encrypt_file(char* from, char* to)
    free(encrypted);
    free(encoded);
    free(master_key);
-   free(encrypted_length);
    return 0;
 }
 
@@ -454,7 +453,7 @@ aes_encrypt(char* plaintext, unsigned char* key, unsigned char* iv, char** ciphe
    size_t size;
    unsigned char* ct = NULL;
    int ct_length;
-   EVP_CIPHER* (*cipher_fp)(void) = get_cipher(mode);
+   const EVP_CIPHER* (*cipher_fp)(void) = get_cipher(mode);
    if (!(ctx = EVP_CIPHER_CTX_new()))
    {
       goto error;
@@ -512,7 +511,7 @@ aes_decrypt(char* ciphertext, int ciphertext_length, unsigned char* key, unsigne
    int length;
    size_t size;
    char* pt = NULL;
-   EVP_CIPHER* (*cipher_fp)(void) = get_cipher(mode);
+   const EVP_CIPHER* (*cipher_fp)(void) = get_cipher(mode);
 
    if (!(ctx = EVP_CIPHER_CTX_new()))
    {
@@ -564,28 +563,29 @@ error:
 
 static const EVP_CIPHER* (*get_cipher(int mode))(void)
 {
-   if (mode = ENCRYPTION_AES_256_CBC)
+   if (mode == ENCRYPTION_AES_256_CBC)
    {
       return &EVP_aes_256_cbc;
    }
-   if (mode = ENCRYPTION_AES_192_CBC)
+   if (mode == ENCRYPTION_AES_192_CBC)
    {
       return &EVP_aes_192_cbc;
    }
-   if (mode = ENCRYPTION_AES_128_CBC)
+   if (mode == ENCRYPTION_AES_128_CBC)
    {
       return &EVP_aes_128_cbc;
    }
-   if (mode = ENCRYPTION_AES_256_CTR)
+   if (mode == ENCRYPTION_AES_256_CTR)
    {
       return &EVP_aes_256_ctr;
    }
-   if (mode = ENCRYPTION_AES_192_CTR)
+   if (mode == ENCRYPTION_AES_192_CTR)
    {
       return &EVP_aes_192_ctr;
    }
-   if (mode = ENCRYPTION_AES_128_CTR)
+   if (mode == ENCRYPTION_AES_128_CTR)
    {
       return &EVP_aes_128_ctr;
    }
+   return &EVP_aes_256_cbc;
 }
