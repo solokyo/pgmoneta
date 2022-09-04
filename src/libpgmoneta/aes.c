@@ -56,7 +56,7 @@ pgmoneta_encrypt_data(char* d)
 
    if (!(dir = opendir(d)))
    {
-      return;
+      return 1;
    }
 
    while ((entry = readdir(dir)) != NULL)

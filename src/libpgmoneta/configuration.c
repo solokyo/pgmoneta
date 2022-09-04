@@ -62,11 +62,8 @@ static int as_logging_mode(char* str);
 static int as_hugepage(char* str);
 static int as_compression(char* str);
 static int as_storage_engine(char* str);
-<<<<<<< HEAD
 static int as_encryption_mode(char* str);
-=======
 static unsigned int as_update_process_title(char* str, unsigned int default_policy);
->>>>>>> 611e744 ([#87] update_process_title setting)
 
 static int transfer_configuration(struct configuration* config, struct configuration* reload);
 static void copy_server(struct server* dst, struct server* src);
