@@ -34,6 +34,10 @@
 /* System */
 #include <dirent.h>
 
+#define ENC_BUF_SIZE (1024*1024)
+
+
+static int encrypt_file(char* from, char* to, int enc);
 static int derive_key_iv(char* password, unsigned char* key, unsigned char* iv, int mode);
 static int aes_encrypt(char* plaintext, unsigned char* key, unsigned char* iv, char** ciphertext, int* ciphertext_length, int mode);
 static int aes_decrypt(char* ciphertext, int ciphertext_length, unsigned char* key, unsigned char* iv, char** plaintext, int mode);
@@ -46,13 +50,6 @@ pgmoneta_encrypt_data(char* d)
    char* to = NULL;
    DIR* dir;
    struct dirent* entry;
-   char* plain = NULL;
-   char* master_key = NULL;
-   char* encrypted = NULL;
-   int encrypted_length = 0;
-   char* encoded = NULL;
-   struct configuration* config;
-   config = (struct configuration*)shmem;
 
    if (!(dir = opendir(d)))
    {
@@ -96,29 +93,7 @@ pgmoneta_encrypt_data(char* d)
             if (pgmoneta_exists(from))
             {
                pgmoneta_log_debug("encrypting from %s to %s", from, to);
-               FILE* in = fopen(from, "rb");
-               if (in == NULL)
-               {
-                  pgmoneta_log_error("fopen: Could not open %s/%s", d, entry->d_name);
-                  break;
-               }
-               fseek(in, 0L, SEEK_END);
-               int fsize = ftell(in);
-               plain = realloc(plain, fsize);
-               fread(plain, sizeof(char), fsize, in);
-               if (pgmoneta_encrypt(plain, master_key, &encrypted, &encrypted_length, config->encryption))
-               {
-                  pgmoneta_log_error("pgmoneta_encrypt_wal: Could not encrypt %s/%s", d, entry->d_name);
-                  break;
-               }
-               FILE* out = fopen(to, "w");
-               if (fputs(encoded, out) == EOF)
-               {
-                  pgmoneta_log_error("pgmoneta_encrypt_wal: Could not write to %s", to);
-                  fclose(out);
-                  break;
-               }
-               fclose(out);
+               encrypt_file(from, to, 1);
                pgmoneta_delete_file(from);
             }
 
@@ -140,23 +115,10 @@ pgmoneta_encrypt_wal(char* d)
    char* to = NULL;
    DIR* dir;
    struct dirent* entry;
-   char* plain = NULL;
-   char* master_key = NULL;
-   char* encrypted = NULL;
-   int encrypted_length = 0;
-   char* encoded = NULL;
-   struct configuration* config;
-   config = (struct configuration*)shmem;
 
    if (!(dir = opendir(d)))
    {
       return 1;
-   }
-
-   if (pgmoneta_get_master_key(&master_key))
-   {
-      pgmoneta_log_fatal("Invalid master key\n");
-      exit(1);
    }
    while ((entry = readdir(dir)) != NULL)
    {
@@ -185,35 +147,7 @@ pgmoneta_encrypt_wal(char* d)
 
          if (pgmoneta_exists(from))
          {
-            pgmoneta_log_debug("encrypting from %s to %s", from, to);
-            FILE* in = fopen(from, "rb");
-            if (in == NULL)
-            {
-               pgmoneta_log_error("fopen: Could not open %s/%s", d, entry->d_name);
-               break;
-            }
-            fseek(in, 0L, SEEK_END);
-            int fsize = ftell(in);
-            plain = realloc(plain, fsize);
-            fread(plain, sizeof(char), fsize, in);
-            if (pgmoneta_encrypt(plain, master_key, &encrypted, &encrypted_length, config->encryption))
-            {
-               pgmoneta_log_error("pgmoneta_encrypt_wal: Could not encrypt %s/%s", d, entry->d_name);
-               break;
-            }
-            if (pgmoneta_base64_encode(encrypted, encrypted_length, &encoded))
-            {
-               pgmoneta_log_error("pgmoneta_encrypt_wal: Could not encode the encrypted bytes from %s/%s", d, entry->d_name);
-               break;
-            }
-            FILE* out = fopen(to, "w");
-            if (fputs(encoded, out) == EOF)
-            {
-               pgmoneta_log_error("pgmoneta_encrypt_wal: Could not write to %s", to);
-               fclose(out);
-               break;
-            }
-            fclose(out);
+            encrypt_file(from, to, 1);
             pgmoneta_delete_file(from);
             pgmoneta_permission(to, 6, 0, 0);
          }
@@ -224,24 +158,12 @@ pgmoneta_encrypt_wal(char* d)
    }
 
    closedir(dir);
-   free(plain);
-   free(encrypted);
-   free(encoded);
-   free(master_key);
    return 0;
 }
 
 int
 pgmoneta_encrypt_file(char* from, char* to)
 {
-   char* plain = NULL;
-   char* master_key = NULL;
-   char* encrypted = NULL;
-   int encrypted_length = 0;
-   char* encoded = NULL;
-   struct configuration* config;
-   config = (struct configuration*)shmem;
-
    pgmoneta_log_debug("decrypting from %s to %s", from, to);
    if (!pgmoneta_exists(from))
    {
@@ -249,40 +171,8 @@ pgmoneta_encrypt_file(char* from, char* to)
       return 1;
    }
 
-   pgmoneta_log_debug("encrypting from %s to %s", from, to);
-   FILE* in = fopen(from, "rb");
-   if (in == NULL)
-   {
-      pgmoneta_log_error("fopen: Could not open %s", from);
-      return 1;
-   }
-   fseek(in, 0L, SEEK_END);
-   int fsize = ftell(in);
-   plain = realloc(plain, fsize);
-   fread(plain, sizeof(char), fsize, in);
-   if (pgmoneta_encrypt(plain, master_key, &encrypted, &encrypted_length, config->encryption))
-   {
-      pgmoneta_log_error("pgmoneta_encrypt_wal: Could not encrypt %s", from);
-      return 1;
-   }
-   if (pgmoneta_base64_encode(encrypted, encrypted_length, &encoded))
-   {
-      pgmoneta_log_error("pgmoneta_encrypt_wal: Could not encode the encrypted bytes from %s", from);
-      return 1;
-   }
-   FILE* out = fopen(to, "w");
-   if (fputs(encoded, out) == EOF)
-   {
-      pgmoneta_log_error("pgmoneta_encrypt_wal: Could not write to %s", to);
-      fclose(out);
-      return 1;
-   }
-   fclose(out);
+   encrypt_file(from, to, 1);
    pgmoneta_delete_file(from);      
-   free(plain);
-   free(encrypted);
-   free(encoded);
-   free(master_key);
    return 0;
 }
 
@@ -351,7 +241,7 @@ pgmoneta_decrypt_data(char* d)
                break;
             }
             fseek(in, 0L, SEEK_END);
-            int fsize = ftell(in);
+            int fsize = ftell(in) + 1;
             encoded = realloc(encoded, fsize);
             fread(encoded, sizeof(char), fsize, in);
             if (pgmoneta_base64_decode(encoded, fsize, &cipher, &cipher_length))
@@ -588,4 +478,120 @@ static const EVP_CIPHER* (*get_cipher(int mode))(void)
       return &EVP_aes_128_ctr;
    }
    return &EVP_aes_256_cbc;
+}
+
+
+static int 
+encrypt_file(char* from, char* to, int enc)
+{
+   unsigned char key[EVP_MAX_KEY_LENGTH];
+   unsigned char iv[EVP_MAX_IV_LENGTH];
+   char* master_key = NULL;
+   EVP_CIPHER_CTX *ctx = NULL;
+   struct configuration* config;
+   config = (struct configuration*)shmem;
+   const EVP_CIPHER* (*cipher_fp)(void) = get_cipher(config->encryption);
+
+   int cipher_block_size = EVP_CIPHER_block_size(cipher_fp());
+   int inbuf_size = ENC_BUF_SIZE;
+	int outbuf_size = inbuf_size + cipher_block_size - 1;
+   unsigned char inbuf[inbuf_size], outbuf[outbuf_size];
+   int f_len = 0;
+
+   FILE *in = NULL, *out = NULL;
+
+   if (pgmoneta_get_master_key(&master_key))
+   {
+      pgmoneta_log_fatal("pgmoneta_get_master_key: Invalid master key\n");
+      goto error;
+   }
+   memset(&key, 0, sizeof(key));
+   memset(&iv, 0, sizeof(iv));
+   if (derive_key_iv(master_key, key, iv, config->encryption) != 0)
+   {
+      pgmoneta_log_fatal("derive_key_iv: Failed to derive key and iv\n");
+      goto error;
+   }
+
+   if (!(ctx = EVP_CIPHER_CTX_new()))
+   {
+      pgmoneta_log_fatal("EVP_CIPHER_CTX_new: Failed to get context\n");
+      goto error;
+   } 
+
+   in = fopen(from, "rb");
+   if (in == NULL)
+   {
+      pgmoneta_log_error("fopen: Could not open %s\n", from);
+      goto error;
+   }
+
+   out = fopen(to, "w");
+   if (in == NULL)
+   {
+      pgmoneta_log_error("fopen: Could not open %s\n", to);
+      goto error;
+   }
+
+	if(EVP_CipherInit_ex(ctx, cipher_fp(), NULL, key, iv, enc) == 0) 
+   {
+		pgmoneta_log_error("EVP_CipherInit_ex: ailed to initialize context\n");
+		goto error;
+	}
+
+	int inl, outl;
+   
+	while((inl = fread(inbuf, sizeof(char), inbuf_size, in)) > 0)
+	{
+		if(EVP_CipherUpdate(ctx, outbuf, &outl, inbuf, inl) == 0) 
+      {
+			pgmoneta_log_error("EVP_CipherUpdate: failed to process block.\n");
+			goto error;
+		}
+		if(fwrite(outbuf, sizeof(char), outl, out) != outl) 
+      {
+			pgmoneta_log_error("fwrite: failed to write cipher");
+			goto error;
+		}
+	}
+
+   if(ferror(in))
+   {
+      pgmoneta_log_error("fread: error reading from file: %s", from);
+      goto error;
+   }
+	
+	if(EVP_CipherFinal_ex(ctx, outbuf, &f_len) == 0) 
+   {
+		pgmoneta_log_error("EVP_CipherFinal_ex: failed to process final cipher block\n");
+		goto error;
+	}
+
+	if(f_len) 
+   {
+		if(fwrite(outbuf, sizeof(char), f_len, out) != f_len) 
+      {
+			pgmoneta_log_error("fwrite: failed to write final block");
+			goto error;
+		}
+	}
+
+   if (ctx)
+   {
+      EVP_CIPHER_CTX_free(ctx);
+   }
+   free(master_key);
+   fclose(in);
+   fclose(out);
+   return 0; 
+
+error:
+   if (ctx)
+   {
+      EVP_CIPHER_CTX_free(ctx);
+   }
+   free(master_key);
+   fclose(in);
+   fclose(out);
+   return 1;   
 }
