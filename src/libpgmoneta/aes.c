@@ -115,6 +115,25 @@ pgmoneta_encrypt_wal(char* d)
    char* to = NULL;
    DIR* dir;
    struct dirent* entry;
+   char* compress_suffix = NULL;
+   struct configuration* config;
+
+   config = (struct configuration*)shmem;
+   switch (config->compression_type)
+   {
+      case COMPRESSION_GZIP:
+         compress_suffix = ".gz";
+         break;
+      case COMPRESSION_ZSTD:
+         compress_suffix = ".zstd";
+         break;
+      case COMPRESSION_LZ4:
+         compress_suffix = ".lz4";
+         break;
+      default:
+         pgmoneta_log_error("encryption_execute: Unknown compression type");
+         break;
+   }
 
    if (!(dir = opendir(d)))
    {
@@ -124,10 +143,7 @@ pgmoneta_encrypt_wal(char* d)
    {
       if (entry->d_type == DT_REG)
       {
-         if (pgmoneta_ends_with(entry->d_name, ".aes")
-             || pgmoneta_ends_with(entry->d_name, ".partial")
-             || pgmoneta_ends_with(entry->d_name, ".history")
-             )
+         if (!pgmoneta_ends_with(entry->d_name, compress_suffix))
          {
             continue;
          }
